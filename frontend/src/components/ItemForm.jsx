@@ -1,256 +1,234 @@
-import { useState } from 'react';
-import { FiUpload, FiX, FiSearch, FiCheckCircle, FiZap } from 'react-icons/fi';
+import { useEffect, useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { Upload, X, Search, CheckCircle, Zap } from 'lucide-react';
 
-const CATEGORIES = ['Electronics', 'Wallet/Purse', 'ID/Cards', 'Bag', 'Keys', 'Clothing', 'Jewelry', 'Other'];
+const CATEGORIES = [
+  'Electronics', 'Wallet/Purse', 'ID/Cards', 'Keys',
+  'Bag', 'Clothing', 'Jewelry', 'Books/Documents',
+  'Accessories', 'Other',
+];
 
 const CATEGORY_KEYWORDS = {
-  Electronics: ['phone', 'mobile', 'iphone', 'samsung', 'laptop', 'charger', 'earphone', 'headphone', 'tablet', 'ipad', 'watch', 'camera', 'cable', 'powerbank', 'airpod', 'earbud'],
-  'Wallet/Purse': ['wallet', 'purse', 'money', 'cash', 'card holder', 'billfold'],
-  'ID/Cards': ['id', 'card', 'aadhar', 'pan', 'passport', 'license', 'student id', 'identity', 'driving'],
-  Bag: ['bag', 'backpack', 'handbag', 'suitcase', 'luggage', 'pouch', 'satchel', 'tote'],
-  Keys: ['key', 'keys', 'keychain', 'locker', 'bike key', 'car key'],
-  Clothing: ['shirt', 'jacket', 'coat', 'sweater', 'hoodie', 'scarf', 'cap', 'hat', 'shoes', 'sandal', 'glasses', 'spectacles', 'umbrella', 'gloves'],
-  Jewelry: ['ring', 'necklace', 'bracelet', 'earring', 'chain', 'bangle', 'pendant', 'locket'],
+  Electronics: ['phone', 'mobile', 'iphone', 'samsung', 'laptop', 'charger', 'earphone', 'headphone', 'tablet', 'ipad', 'watch', 'camera', 'airpod'],
+  'Wallet/Purse': ['wallet', 'purse', 'money', 'cash', 'billfold'],
+  'ID/Cards': ['id', 'card', 'aadhar', 'pan', 'passport', 'license', 'student id', 'identity'],
+  Keys: ['key', 'keys', 'keychain', 'locker'],
+  Bag: ['bag', 'backpack', 'handbag', 'suitcase', 'luggage', 'pouch'],
+  Clothing: ['shirt', 'jacket', 'coat', 'sweater', 'hoodie', 'scarf', 'cap', 'hat', 'shoes', 'glasses', 'umbrella'],
+  Jewelry: ['ring', 'necklace', 'bracelet', 'earring', 'chain', 'bangle', 'pendant'],
+  'Books/Documents': ['book', 'notebook', 'document', 'notes', 'folder', 'file'],
 };
 
 function detectCategory(title) {
   const lower = title.toLowerCase();
-  for (const [cat, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
-    if (keywords.some((kw) => lower.includes(kw))) return cat;
+  for (const [cat, kws] of Object.entries(CATEGORY_KEYWORDS)) {
+    if (kws.some((kw) => lower.includes(kw))) return cat;
   }
   return null;
 }
 
-const EMPTY_FORM = (type) => ({
-  type,
-  title: '',
-  description: '',
-  category: 'Other',
-  location: '',
-  date: '',
-  status: 'open',
+const schema = z.object({
+  type: z.enum(['lost', 'found']),
+  title: z.string().min(3, 'Title must be at least 3 characters').max(120),
+  description: z.string().min(10, 'Description must be at least 10 characters').max(2000),
+  category: z.enum(CATEGORIES),
+  location: z.string().min(2, 'Location is required').max(200),
+  date: z.string().min(1, 'Date is required'),
+  identifyingFeatures: z.string().max(500).optional(),
+  status: z.enum(['open', 'claimed', 'resolved', 'expired']).optional(),
 });
 
-export default function ItemForm({ initial = {}, onSubmit, loading }) {
-  const isEdit = !!initial._id;
+export default function ItemForm({ initial = {}, onSubmit, loading, isEdit = false }) {
+  const {
+    register,
+    handleSubmit,
+    watch,
+    setValue,
+    formState: { errors },
+  } = useForm({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      type: initial.type || 'lost',
+      title: initial.title || '',
+      description: initial.description || '',
+      category: initial.category || 'Other',
+      location: initial.location || '',
+      date: initial.date ? initial.date.slice(0, 10) : '',
+      identifyingFeatures: initial.identifyingFeatures || '',
+      status: initial.status || 'open',
+    },
+  });
 
-  const [form, setForm] = useState(
-    isEdit
-      ? {
-          type: initial.type || 'lost',
-          title: initial.title || '',
-          description: initial.description || '',
-          category: initial.category || 'Other',
-          location: initial.location || '',
-          date: initial.date ? initial.date.slice(0, 10) : '',
-          status: initial.status || 'open',
-        }
-      : EMPTY_FORM(initial.type || 'lost')
+  const [images, setImages] = useState([]);
+  const [previews, setPreviews] = useState(
+    Array.isArray(initial.images) ? initial.images : initial.image ? [initial.image] : []
   );
-
-  const [image, setImage] = useState(null);
-  const [preview, setPreview] = useState(initial.image || '');
-  const [errors, setErrors] = useState({});
   const [autoCategory, setAutoCategory] = useState(false);
 
-  const handleTypeChange = (t) => {
-    if (!isEdit) {
-      setForm(EMPTY_FORM(t));
-      setImage(null);
-      setPreview('');
-      setErrors({});
-      setAutoCategory(false);
+  const titleValue = watch('title');
+
+  useEffect(() => {
+    if (!titleValue) return;
+    const detected = detectCategory(titleValue);
+    if (detected) {
+      setValue('category', detected);
+      setAutoCategory(true);
     } else {
-      setForm((f) => ({ ...f, type: t }));
+      setAutoCategory(false);
     }
+  }, [titleValue, setValue]);
+
+  const handleImages = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setImages((prev) => [...prev, ...files].slice(0, 4));
+    const urls = files.map((f) => URL.createObjectURL(f));
+    setPreviews((prev) => [...prev, ...urls].slice(0, 4));
   };
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setForm((f) => ({ ...f, [name]: value }));
-    if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
-    if (name === 'title') {
-      const detected = detectCategory(value);
-      if (detected) {
-        setForm((f) => ({ ...f, title: value, category: detected }));
-        setAutoCategory(true);
-      } else {
-        setAutoCategory(false);
-      }
-    }
+  const removePreview = (idx) => {
+    setImages((prev) => prev.filter((_, i) => i !== idx));
+    setPreviews((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const handleBlur = (e) => {
-    const { name, value } = e.target;
-    const required = ['title', 'description', 'location', 'date'];
-    if (required.includes(name) && (!value || !value.trim())) {
-      setErrors((prev) => ({ ...prev, [name]: `${name.charAt(0).toUpperCase() + name.slice(1)} is required` }));
-    }
-  };
-
-  const handleImage = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setImage(file);
-    setPreview(URL.createObjectURL(file));
-  };
-
-  const removeImage = () => { setImage(null); setPreview(''); };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    const newErrors = {};
-    if (!form.title.trim()) newErrors.title = 'Title is required';
-    if (!form.description.trim()) newErrors.description = 'Description is required';
-    if (!form.location.trim()) newErrors.location = 'Location is required';
-    if (!form.date) newErrors.date = 'Date is required';
-    if (Object.keys(newErrors).length > 0) { setErrors(newErrors); return; }
+  const onFormSubmit = (data) => {
     const fd = new FormData();
-    Object.entries(form).forEach(([k, v]) => fd.append(k, v));
-    if (image) fd.append('image', image);
+    Object.entries(data).forEach(([k, v]) => { if (v !== undefined && v !== null) fd.append(k, v); });
+    images.forEach((img) => fd.append('images', img));
     onSubmit(fd);
   };
 
+  const typeValue = watch('type');
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-      {/* Type Toggle */}
-      <div className="flex gap-3">
-        {[
-          { val: 'lost', label: 'Lost Item', icon: <FiSearch /> },
-          { val: 'found', label: 'Found Item', icon: <FiCheckCircle /> },
-        ].map(({ val, label, icon }) => (
-          <button
-            key={val}
-            type="button"
-            onClick={() => handleTypeChange(val)}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold border-2 transition-all text-sm ${
-              form.type === val
-                ? val === 'lost'
-                  ? 'border-red-500 bg-red-50 text-red-600'
-                  : 'border-emerald-500 bg-emerald-50 text-emerald-600'
-                : 'border-gray-200 text-gray-500 hover:border-gray-300 bg-white'
-            }`}
-          >
-            {icon} {label}
-          </button>
-        ))}
-      </div>
+    <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-4" noValidate>
+      {/* Type toggle */}
+      {!isEdit && (
+        <div className="flex gap-3">
+          {[
+            { val: 'lost', label: 'Lost Item', icon: <Search className="w-4 h-4" /> },
+            { val: 'found', label: 'Found Item', icon: <CheckCircle className="w-4 h-4" /> },
+          ].map(({ val, label, icon }) => (
+            <button
+              key={val}
+              type="button"
+              onClick={() => setValue('type', val)}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold border-2 transition-all text-sm ${
+                typeValue === val
+                  ? val === 'lost'
+                    ? 'border-red-500 bg-red-50 text-red-600'
+                    : 'border-emerald-500 bg-emerald-50 text-emerald-600'
+                  : 'border-gray-200 text-gray-500 hover:border-gray-300 bg-white'
+              }`}
+            >
+              {icon} {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Title */}
       <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-1.5">Item Title *</label>
-        <input
-          name="title"
-          value={form.title}
-          onChange={handleChange}
-          onBlur={handleBlur}
-          className={`input ${errors.title ? 'input-error' : ''}`}
-          placeholder="e.g. Black iPhone 14"
-        />
-        {errors.title && <p className="text-red-500 text-xs mt-1">{errors.title}</p>}
+        <label className="label" htmlFor="title">Item Title *</label>
+        <input id="title" {...register('title')} className={`input ${errors.title ? 'input-error' : ''}`}
+          placeholder="e.g. Black iPhone 14" />
+        {errors.title && <p className="error-msg">{errors.title.message}</p>}
       </div>
 
       {/* Category + Date */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-1.5">
+          <label className="label" htmlFor="category">
             Category *
             {autoCategory && (
-              <span className="flex items-center gap-1 text-xs text-blue-500 font-medium">
-                <FiZap className="text-xs" /> auto-detected
+              <span className="inline-flex items-center gap-1 ml-2 text-xs text-blue-500 font-medium">
+                <Zap className="w-3 h-3" /> auto-detected
               </span>
             )}
           </label>
-          <select
-            name="category"
-            value={form.category}
-            onChange={(e) => { handleChange(e); setAutoCategory(false); }}
-            className="input"
-          >
-            {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+          <select id="category" {...register('category')}
+            onChange={(e) => { setValue('category', e.target.value); setAutoCategory(false); }}
+            className="input">
+            {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-1.5">Date *</label>
-          <input
-            type="date"
-            name="date"
-            value={form.date}
-            onChange={handleChange}
-            onBlur={handleBlur}
+          <label className="label" htmlFor="date">Date *</label>
+          <input id="date" type="date" {...register('date')}
             max={new Date().toISOString().slice(0, 10)}
-            className={`input ${errors.date ? 'input-error' : ''}`}
-          />
-          {errors.date && <p className="text-red-500 text-xs mt-1">{errors.date}</p>}
+            className={`input ${errors.date ? 'input-error' : ''}`} />
+          {errors.date && <p className="error-msg">{errors.date.message}</p>}
         </div>
       </div>
 
       {/* Location */}
       <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-1.5">Location *</label>
-        <input
-          name="location"
-          value={form.location}
-          onChange={handleChange}
-          onBlur={handleBlur}
-          className={`input ${errors.location ? 'input-error' : ''}`}
-          placeholder="e.g. Library, Block A"
-        />
-        {errors.location && <p className="text-red-500 text-xs mt-1">{errors.location}</p>}
+        <label className="label" htmlFor="location">Location *</label>
+        <input id="location" {...register('location')} className={`input ${errors.location ? 'input-error' : ''}`}
+          placeholder="e.g. Library Block A, Gate 2" />
+        {errors.location && <p className="error-msg">{errors.location.message}</p>}
       </div>
 
       {/* Description */}
       <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-1.5">Description *</label>
-        <textarea
-          name="description"
-          value={form.description}
-          onChange={handleChange}
-          onBlur={handleBlur}
-          rows={3}
+        <label className="label" htmlFor="description">Description *</label>
+        <textarea id="description" {...register('description')} rows={3}
           className={`input resize-none ${errors.description ? 'input-error' : ''}`}
-          placeholder="Describe the item — color, brand, distinguishing features..."
-        />
-        {errors.description && <p className="text-red-500 text-xs mt-1">{errors.description}</p>}
+          placeholder="Describe the item — color, brand, distinguishing features..." />
+        {errors.description && <p className="error-msg">{errors.description.message}</p>}
+      </div>
+
+      {/* Identifying features */}
+      <div>
+        <label className="label" htmlFor="identifyingFeatures">
+          Identifying Features
+          <span className="font-normal text-gray-400 ml-1">(helps AI matching)</span>
+        </label>
+        <input id="identifyingFeatures" {...register('identifyingFeatures')} className="input"
+          placeholder="e.g. scratched back, blue case, initials 'JK'" />
       </div>
 
       {/* Status (edit only) */}
       {isEdit && (
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-1.5">Status</label>
-          <select name="status" value={form.status} onChange={handleChange} className="input">
+          <label className="label" htmlFor="status">Status</label>
+          <select id="status" {...register('status')} className="input">
             <option value="open">Open</option>
             <option value="resolved">Resolved</option>
+            <option value="expired">Expired</option>
           </select>
         </div>
       )}
 
-      {/* Photo */}
+      {/* Images */}
       <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-1.5">Photo</label>
-        {!preview ? (
-          <label className="flex items-center gap-3 cursor-pointer border-2 border-dashed border-gray-200 rounded-xl p-4 hover:border-blue-400 hover:bg-blue-50/30 transition-colors">
-            <div className="w-9 h-9 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <FiUpload className="text-gray-400" />
+        <label className="label">
+          Photos
+          <span className="font-normal text-gray-400 ml-1">(up to 4, helps AI matching)</span>
+        </label>
+        <div className="grid grid-cols-4 gap-2 mb-2">
+          {previews.map((url, idx) => (
+            <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border border-gray-200">
+              <img src={url} alt="" className="w-full h-full object-cover" />
+              <button type="button" onClick={() => removePreview(idx)}
+                className="absolute top-1 right-1 bg-black/50 text-white rounded-md p-0.5 hover:bg-black/70">
+                <X className="w-3 h-3" />
+              </button>
             </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Click to upload image</p>
-              <p className="text-xs text-gray-400">PNG, JPG, WEBP up to 5MB</p>
-            </div>
-            <input type="file" accept="image/*" onChange={handleImage} className="hidden" />
-          </label>
-        ) : (
-          <div className="relative">
-            <img src={preview} alt="preview" className="h-40 w-full object-cover rounded-xl" />
-            <button
-              type="button"
-              onClick={removeImage}
-              className="absolute top-2 right-2 bg-white rounded-lg p-1.5 shadow-sm hover:bg-red-50 text-gray-500 hover:text-red-500 transition-colors"
-            >
-              <FiX className="text-sm" />
-            </button>
-          </div>
-        )}
+          ))}
+          {previews.length < 4 && (
+            <label className="aspect-square flex items-center justify-center border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:border-blue-400 hover:bg-blue-50/30 transition-colors">
+              <div className="text-center">
+                <Upload className="w-5 h-5 text-gray-400 mx-auto mb-1" />
+                <span className="text-[10px] text-gray-400">Add photo</span>
+              </div>
+              <input type="file" accept="image/*" multiple onChange={handleImages} className="hidden" />
+            </label>
+          )}
+        </div>
+        <p className="text-xs text-gray-400">PNG, JPG, WEBP up to 5MB each</p>
       </div>
 
       <button type="submit" disabled={loading} className="btn-primary w-full py-3 text-base">
@@ -260,7 +238,7 @@ export default function ItemForm({ initial = {}, onSubmit, loading }) {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
             </svg>
-            Submitting...
+            Saving...
           </span>
         ) : isEdit ? 'Update Report' : 'Submit Report'}
       </button>

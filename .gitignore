@@ -1,0 +1,46 @@
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# Build outputs
+dist/
+build/
+.next/
+
+# Uploads (local dev only)
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Python
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Vite
+.vite/
+
+# Coverage
+coverage/
+htmlcov/

@@ -1,23 +1,33 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
-import { FiEye, FiEyeOff, FiSearch } from 'react-icons/fi';
+import { Eye, EyeOff, Search } from 'lucide-react';
+
+const schema = z.object({
+  name: z.string().min(2, 'Name must be at least 2 characters'),
+  email: z.string().email('Invalid email'),
+  phone: z.string().max(20).optional(),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+  confirm: z.string().min(1, 'Please confirm your password'),
+}).refine((d) => d.password === d.confirm, { message: 'Passwords do not match', path: ['confirm'] });
 
 export default function Register() {
-  const { register } = useAuth();
+  const { register: registerUser } = useAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ name: '', email: '', phone: '', password: '' });
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (form.password.length < 6) { toast.error('Password must be at least 6 characters'); return; }
+  const { register, handleSubmit, formState: { errors } } = useForm({ resolver: zodResolver(schema) });
+
+  const onSubmit = async ({ name, email, password, phone }) => {
     setLoading(true);
     try {
-      await register(form.name, form.email, form.password, form.phone);
-      toast.success('Account created');
+      await registerUser(name, email, password, phone || '');
+      toast.success('Account created! Welcome to FindIt.');
       navigate('/dashboard');
     } catch (err) {
       toast.error(err.response?.data?.message || 'Registration failed');
@@ -26,17 +36,15 @@ export default function Register() {
     }
   };
 
-  const set = (f) => (e) => setForm({ ...form, [f]: e.target.value });
-
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        <div className="flex items-center gap-2 mb-8">
+        <Link to="/" className="flex items-center gap-2 mb-8">
           <div className="w-7 h-7 bg-gray-900 rounded-md flex items-center justify-center">
-            <FiSearch className="text-white text-xs" strokeWidth={2.5} />
+            <Search className="text-white w-3.5 h-3.5" strokeWidth={2.5} />
           </div>
           <span className="font-bold text-gray-900">FindIt</span>
-        </div>
+        </Link>
 
         <h1 className="text-xl font-bold text-gray-900 mb-1">Create your account</h1>
         <p className="text-sm text-gray-500 mb-6">
@@ -44,31 +52,44 @@ export default function Register() {
           <Link to="/login" className="text-gray-900 font-medium hover:underline">Sign in</Link>
         </p>
 
-        <form onSubmit={handleSubmit} className="space-y-3">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
           <div>
-            <label className="label">Full name</label>
-            <input type="text" required className="input" placeholder="John Doe" value={form.name} onChange={set('name')} />
+            <label className="label" htmlFor="name">Full name</label>
+            <input id="name" type="text" {...register('name')} className={`input ${errors.name ? 'input-error' : ''}`}
+              placeholder="Jane Doe" autoComplete="name" />
+            {errors.name && <p className="error-msg">{errors.name.message}</p>}
           </div>
           <div>
-            <label className="label">Email address</label>
-            <input type="email" required className="input" placeholder="you@example.com" value={form.email} onChange={set('email')} />
+            <label className="label" htmlFor="email">Email address</label>
+            <input id="email" type="email" {...register('email')} className={`input ${errors.email ? 'input-error' : ''}`}
+              placeholder="you@example.com" autoComplete="email" />
+            {errors.email && <p className="error-msg">{errors.email.message}</p>}
           </div>
           <div>
-            <label className="label">
+            <label className="label" htmlFor="phone">
               Phone <span className="text-gray-400 font-normal">(optional)</span>
             </label>
-            <input type="tel" className="input" placeholder="+91 98765 43210" value={form.phone} onChange={set('phone')} />
+            <input id="phone" type="tel" {...register('phone')} className="input"
+              placeholder="+91 98765 43210" autoComplete="tel" />
           </div>
           <div>
-            <label className="label">Password</label>
+            <label className="label" htmlFor="password">Password</label>
             <div className="relative">
-              <input type={showPass ? 'text' : 'password'} required className="input pr-10"
-                placeholder="Min. 6 characters" value={form.password} onChange={set('password')} />
+              <input id="password" type={showPass ? 'text' : 'password'} {...register('password')}
+                className={`input pr-10 ${errors.password ? 'input-error' : ''}`}
+                placeholder="Min. 6 characters" autoComplete="new-password" />
               <button type="button" onClick={() => setShowPass(!showPass)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                {showPass ? <FiEyeOff className="text-sm" /> : <FiEye className="text-sm" />}
+                {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
+            {errors.password && <p className="error-msg">{errors.password.message}</p>}
+          </div>
+          <div>
+            <label className="label" htmlFor="confirm">Confirm password</label>
+            <input id="confirm" type={showPass ? 'text' : 'password'} {...register('confirm')}
+              className={`input ${errors.confirm ? 'input-error' : ''}`} placeholder="Repeat password" />
+            {errors.confirm && <p className="error-msg">{errors.confirm.message}</p>}
           </div>
           <button type="submit" disabled={loading} className="btn-primary w-full py-2.5 mt-1">
             {loading ? 'Creating account...' : 'Create account'}
